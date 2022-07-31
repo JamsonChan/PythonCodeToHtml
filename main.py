@@ -44,7 +44,7 @@ class PythonToHTML:
         self.find_brackets() # 尋找括號(class='brackets')
         self.find_number() # 尋找數字(class='number')
         self.add_span() # 加入所有 span 標籤
-        self.add_space() # 將程式碼內空格轉換為 HTML 格式
+        self.add_html_exception() # 處理 HTML 例外格式
         self.to_html() # 轉為 HTML
     def read_py(self): # 讀取 py 檔，並存成 self.py(str)
         with open(self.input_py_name, "r", encoding="utf-8") as f:
@@ -54,19 +54,43 @@ class PythonToHTML:
             self.py += "\n"
     def find_comment(self): # 尋找註解(class='comment')
         for i in range(len(self.py)):
-            if self.py[i] == "#" and self.py[i-1] != "\\":
+            if self.py[i] == "#":
                 end = i + self.py[i:].find("\n")
-                data = [i, end, "comment"]
-                self.add_coloring(data)
+                if (self.py[i:end].count("\"") + self.py[i:end].count("\'"))%2 == 0:
+                    data = [i, end, "comment"]
+                    self.add_coloring(data)
     def find_str(self): # 尋找字串(class='str')
         dqi_list = list() # double quotation index list (記錄雙引號位置)
         sqi_list = list() # single quotation index list (記錄單引號位置)
+        all_qi_list = list()
         # 紀錄引號位置
+        # for j in range(len(self.py)):
+        #     if self.py[j] in "\"\'" and self.py[j-1] != "\\" and j not in self.colored: # 跳過「\'」、「\"」字元
+        #         if self.py[j] == "\"": dqi_list.append(j) # 紀錄雙引號位置
+        #         else: sqi_list.append(j) # 紀錄單引號位置
         for quot in self.quot_list:
             for j in range(len(self.py)):
-                if self.py[j] == quot and self.py[j-1] != "\\": # 跳過「\'」、「\"」字元
+                if self.py[j] == quot and self.py[j-1] != "\\" and j not in self.colored: # 跳過「\'」、「\"」字元
                     if quot == "\"": dqi_list.append(j) # 紀錄雙引號位置
                     else: sqi_list.append(j) # 紀錄單引號位置
+        # 處理 2 雙引包 1 單引(或反之)
+        all_list = sorted(sqi_list + dqi_list + self.search_all("\n", self.py))
+        split_list = list()
+        start = 0
+        for i in range(len(all_list)):
+            if self.py[all_list[i]]=="\n":
+                split_list.append(all_list[start:i])
+                start = i + 1
+        for line in split_list:
+            if len(line) >= 3:
+                for j in range(len(line)-2):
+                    if self.py[line[j]] == self.py[line[j+2]] and \
+                        self.py[line[j]] != self.py[line[j+1]]:
+                        if self.py[line[j+1]] == "\"":
+                            dqi_list.remove(line[j+1])
+                        else:
+                            sqi_list.remove(line[j+1])
+
         # 因引號為兩兩一組出現，故把 list 分割為兩兩一組
         # (因註解與「\'」、「\"」已處理完，在程式碼無 SyntaxError 前提下，可直接分兩兩一組)
         dqi_list = [[dqi_list[j], dqi_list[j+1], "str"] for j in range(0, len(dqi_list), 2)]
@@ -205,7 +229,7 @@ class PythonToHTML:
         self.add_coloring_and_detect_sign(self.keyword_list1, sign, "keyword1")
         self.add_coloring_and_detect_sign(self.keyword_list2, sign, "keyword2")
     def find_bool_and_None(self): # 尋找布林值和空值(class='keyword1')
-        sign = " \n:()[]{}"
+        sign = " \n:()[]{}="
         self.add_coloring_and_detect_sign(self.bool_list, sign, "keyword1")
     def find_op(self): # 尋找運算符號(class='op')
         self.add_coloring_at_single_char(self.op_list, "op")
@@ -225,13 +249,14 @@ class PythonToHTML:
                     self.add_coloring(data)
                     detected = False
     def add_span(self): # 加入所有 span 標籤
+
         self.coloring_list.sort(reverse=True)
         for loc in self.coloring_list:
             start = loc[0]
             end = loc[1] + 1
             Class = loc[2]
             self.py = f"{self.py[:start]}<span class='{Class}'>{self.py[start:end]}</span>{self.py[end:]}"
-    def add_space(self): # 將程式碼內空格轉換為 HTML 格式
+    def add_html_exception(self): # 將程式碼內空格轉換為 HTML 格式
         py_list = []
         py_copy = self.py[:]
         while py_copy!="": # 重複執行到全部切分完
@@ -244,13 +269,21 @@ class PythonToHTML:
             py_list.append(py_copy[start:end]) # 將 <span></span> 切分進 new_file_list
             py_copy = py_copy[end:] # 將以上處理完的區塊刪除，往下輪 while 處理
 
-        # 刪除切分多餘的空元素
+        
         for i in range(len(py_list)-1, -1, -1):
+            # 刪除切分多餘的空元素
             if py_list[i] == "":
                 del py_list[i]
+            # 將不在 span 標籤內的空字元轉為 HTML 格式(否則連續空格會被縮成一個空格)
             if not py_list[i].startswith("<span"):
                 py_list[i] = py_list[i].replace(" ", "&nbsp")
-        
+            # 將在字串 span 標籤內的 < 轉為 HTML 格式(否則會被誤認為標籤符號)
+            if py_list[i].startswith("<span class='str'>"):
+                py_list[i] = py_list[i][:19] + py_list[i][19:-8].replace("<", "&lt") + py_list[i][-8:]
+
+
+
+
         self.py = "".join(py_list)
     def to_html(self): # 轉為 HTML
         self.py = self.py.split("\n")
@@ -323,5 +356,6 @@ class PythonToHTML:
             return s.isdigit() or s.isalpha() or s == "_"
     def is_number(self, s): # 確認是否為數字(int float 皆可判斷)
         return s.isdigit() or s == "."
-pth = PythonToHTML(input_py_name = "snake", output_html_name = "test")
+
+pth = PythonToHTML(input_py_name = "java", output_html_name = "test")
 pth.main()
