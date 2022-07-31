@@ -142,7 +142,7 @@ class PythonToHTML:
                     elif (cur == "}" and next == "{"):
                         cur_ind += 1
                         next_ind -= 1
-                    elif (cur == "\"" and next == "\'") or (cur == "\'" and next == "\""):
+                    elif (cur in "\"\'" and next in "\"\'"):
                         if j!=0:
                             cur_ind += 1
                     else:
@@ -357,5 +357,5 @@ class PythonToHTML:
     def is_number(self, s): # 確認是否為數字(int float 皆可判斷)
         return s.isdigit() or s == "."
 
-pth = PythonToHTML(input_py_name = "java", output_html_name = "test")
+pth = PythonToHTML(input_py_name = "", output_html_name = "")
 pth.main()
