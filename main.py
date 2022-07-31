@@ -77,10 +77,10 @@ class PythonToHTML:
                 compare = [dqi_list[d][0] , dqi_list[d][1], sqi_list[s][0], sqi_list[s][1]]
                 # 若某對引號被包裹，則此區塊會將它們的值改為 [None, None]
                 # 若無兩對比較引號皆不為 None，且無互相包裹情況，則不做任何處理
-                if None not in compare: 
-                    if compare[1] < compare[3] < compare[2] < compare[0]:
+                if None not in compare:
+                    if compare[0] < compare[2] < compare[3] < compare[1]:
                         sqi_list[s][0] = sqi_list[s][1] = None
-                    elif compare[3] < compare[1] < compare[0] < compare[2]:
+                    elif compare[2] < compare[0] < compare[1] < compare[3]:
                         dqi_list[d][0] = dqi_list[d][1] = None
         # 將為 [None, None] 的引號對刪除
         # (因屬於 for 迴圈，要走訪並刪除就必須反向讀取，避免 IndexError)
@@ -90,10 +90,50 @@ class PythonToHTML:
         for s in range(len(sqi_list)-1, -1, -1):
             if sqi_list[s][0] == None:
                 del sqi_list[s]
+        
+        qi_list = sorted(dqi_list + sqi_list)
+        
+        # 處理 f-string 內的{}
+        for i in range(len(qi_list)-1, -1, -1):
+            start = qi_list[i][0]
+            end = qi_list[i][1]
+            # 跳過 f-string 內的雙大括號
+            py_copy = self.py[:].replace("{{", "🧡🧡").replace("}}", "🌟🌟")
+            if py_copy[start-1] == "f" and "{" in py_copy[start:end+1] and "}" in py_copy[start:end+1]:
+                sign_list = list()
+                for j in range(len(py_copy[start:end+1])):
+                    if py_copy[start + j] in "\"\'{}":
+                        sign_list.append([start + j, py_copy[start + j]])
+                for j in range(len(sign_list)-1):
+                    cur_ind  = sign_list[j][0]
+                    cur      = sign_list[j][1]
+                    next_ind = sign_list[j+1][0]
+                    next     = sign_list[j+1][1]
+                    if cur in "\"\'" and next == "{":
+                        if j != 0:
+                            cur_ind += 1
+                        next_ind -= 1
+                    elif cur == "}" and next in "\"\'":
+                        cur_ind += 1
+                    elif (cur == "}" and next == "{"):
+                        cur_ind += 1
+                        next_ind -= 1
+                    elif (cur == "\"" and next == "\'") or (cur == "\'" and next == "\""):
+                        if j!=0:
+                            cur_ind += 1
+                    else:
+                        continue
+                    qi_list.append([cur_ind, next_ind, "str"])
+                    
+                del qi_list[i]
 
-        qi_list = dqi_list + sqi_list
+        # 加入著色列表
         for qi in qi_list:
             self.add_coloring(qi)
+            # 處理 f-string 的 f
+            f_ind = qi[0]-1
+            if self.py[f_ind] == "f":
+                self.add_coloring([f_ind, f_ind, "keyword1"])
     def find_type(self): # 尋找型別(class='module')
         sign = "\n ,()[]{}"
         self.add_coloring_and_detect_sign(self.type_list, sign, "module")
@@ -120,7 +160,7 @@ class PythonToHTML:
         sign = " \n.,()" # 模組名稱前後合法字元
         self.add_coloring_and_detect_sign(self.module_list, sign, "module")
     def find_class(self): # 尋找類別(class='module')
-        for ind in self.search_all("class"):
+        for ind in self.search_all("class", self.py):
             start = ind + len("class")
             done = False
             while True:
@@ -136,13 +176,13 @@ class PythonToHTML:
                 start += 1
             self.class_list.append(self.py[start:end])
 
-        sign = " \n=:("
+        sign = " \n=:()[]{}"
         self.add_coloring_and_detect_sign(self.class_list, sign, "module")
     def find_func(self): # 尋找內建函式(class='func')
         sign = " \n+-*/%=[](){}"
         self.add_coloring_and_detect_sign(self.func_list, sign, "func")
     def find_def(self): # 尋找自訂函式(class='func')
-        for ind in self.search_all("def"):
+        for ind in self.search_all("def", self.py):
             start = ind + len("def")
             done = False
             while True:
@@ -251,14 +291,14 @@ class PythonToHTML:
         """
         with open(self.output_html_name, "w", encoding="utf-8") as f:
             f.write(HTML)
-    def search_all(self, target): # 搜尋 py 檔內所有指定字串的 index
-        return [_.start() for _ in re.finditer(target, self.py)]
+    def search_all(self, target, s): # 搜尋 py 檔內所有指定字串的 index
+        return [_.start() for _ in re.finditer(target, s)]
     def add_coloring(self, data): # 新增著色區塊
         # 參數 data 格式 [頭索引 int, 尾索引 int, 著色名稱 str]
         start = data[0]
         end = data[1]
         # 若該區塊已被占用則不加入著色
-        if start in self.colored or end in self.colored:
+        if (start in self.colored or end in self.colored):
             return
         # 若未被占用則加入到 self.coloring_list，並在 self.colored 內標註已占用
         else:
@@ -266,7 +306,7 @@ class PythonToHTML:
             self.colored.extend([i for i in range(start, end + 1)])
     def add_coloring_and_detect_sign(self, target_list, sign, class_name): # 新增著色區塊同時偵測左右字元
         for t in target_list:
-            for start in self.search_all(t):
+            for start in self.search_all(t, self.py):
                 end = start + len(t) - 1
                 if self.py[start - 1] in sign and self.py[end + 1] in sign:
                     data = [start, end, class_name]
@@ -283,5 +323,5 @@ class PythonToHTML:
             return s.isdigit() or s.isalpha() or s == "_"
     def is_number(self, s): # 確認是否為數字(int float 皆可判斷)
         return s.isdigit() or s == "."
-pth = PythonToHTML(input_py_name = "in", output_html_name = "test")
+pth = PythonToHTML(input_py_name = "snake", output_html_name = "test")
 pth.main()
