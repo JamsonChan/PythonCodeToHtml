@@ -96,15 +96,9 @@ class PythonToHTML:
             self.add_coloring(qi)
     def find_type(self): # 尋找型別(class='module')
         sign = "\n ,()[]{}"
-        for tp in self.type_list:
-            for start in self.search_all(tp):
-                end = start + len(tp) - 1
-                if self.py[start - 1] in sign and self.py[end + 1] in sign:
-                    data = [start, end, "module"]
-                    self.add_coloring(data)
+        self.add_coloring_and_detect_sign(self.type_list, sign, "module")
     def find_module(self): # 尋找模組(class='module')
         import_list = ["import", "from", "as", "*", ""] # 尋找匯入模組的關鍵字列表
-        sign = " \n.,()" # 模組名稱前後合法字元
 
         py_copy = "".join(self.py)
         py_copy = py_copy.split("\n")
@@ -123,14 +117,9 @@ class PythonToHTML:
             self.module_list.append(m)
         self.module_list = [m for m in list(set(self.module_list)) if m not in import_list]
 
-        for md in self.module_list:
-            for start in self.search_all(md):
-                end = start + len(md) - 1
-                if self.py[start - 1] in sign and self.py[end + 1] in sign:
-                    data = [start, end, "module"]
-                    self.add_coloring(data)
+        sign = " \n.,()" # 模組名稱前後合法字元
+        self.add_coloring_and_detect_sign(self.module_list, sign, "module")
     def find_class(self): # 尋找類別(class='module')
-        sign = " \n=:("
         for ind in self.search_all("class"):
             start = ind + len("class")
             done = False
@@ -147,20 +136,11 @@ class PythonToHTML:
                 start += 1
             self.class_list.append(self.py[start:end])
 
-        for cla in self.class_list:
-            for start in self.search_all(cla):
-                end = start + len(cla) - 1
-                if self.py[end + 1] in sign:
-                    data = [start, end, "module"]
-                    self.add_coloring(data)
+        sign = " \n=:("
+        self.add_coloring_and_detect_sign(self.class_list, sign, "module")
     def find_func(self): # 尋找內建函式(class='func')
         sign = " \n+-*/%=[](){}"
-        for func in self.func_list:
-            for start in self.search_all(func):
-                end = start + len(func) - 1
-                if self.py[start - 1] in sign and self.py[end + 1] in sign:
-                    data = [start, end, "func"]
-                    self.add_coloring(data)
+        self.add_coloring_and_detect_sign(self.func_list, sign, "func")
     def find_def(self): # 尋找自訂函式(class='func')
         for ind in self.search_all("def"):
             start = ind + len("def")
@@ -178,43 +158,19 @@ class PythonToHTML:
                 start += 1
             self.def_list.append(self.py[start:end])
 
-        sign = " \n+-*/%=[](){}"
-        for df in self.def_list:
-            for start in self.search_all(df):
-                end = start + len(df) - 1
-                if self.py[end + 1] in sign:
-                    data = [start, end, "func"]
-                    self.add_coloring(data)
+        sign = " \n+-*/%=.[](){}"
+        self.add_coloring_and_detect_sign(self.def_list, sign, "func")
     def find_keyword(self): # 尋找關鍵字(class='keyword1' and 'keyword2')
         sign = " \n:"
-        for kw_list in [self.keyword_list1, self.keyword_list2]:
-            for kw in kw_list:
-                for start in self.search_all(kw):
-                    end = start + len(kw) - 1
-                    if self.py[start - 1] in sign and self.py[end + 1] in sign:
-                        if kw_list == self.keyword_list1:
-                            data = [start, end, "keyword1"]
-                        else:
-                            data = [start, end, "keyword2"]
-                        self.add_coloring(data)
+        self.add_coloring_and_detect_sign(self.keyword_list1, sign, "keyword1")
+        self.add_coloring_and_detect_sign(self.keyword_list2, sign, "keyword2")
     def find_bool_and_None(self): # 尋找布林值和空值(class='keyword1')
         sign = " \n:()[]{}"
-        for b in self.bool_list:
-            for start in self.search_all(b):
-                end = start + len(b) - 1
-                if self.py[start - 1] in sign and self.py[end + 1] in sign:
-                    data = [start, end, "keyword1"]
-                    self.add_coloring(data)
+        self.add_coloring_and_detect_sign(self.bool_list, sign, "keyword1")
     def find_op(self): # 尋找運算符號(class='op')
-        for i in range(len(self.py)):
-            if self.py[i] in self.op_list:
-                data = [i, i, "op"]
-                self.add_coloring(data)
+        self.add_coloring_at_single_char(self.op_list, "op")
     def find_brackets(self): # 尋找括號(class='brackets')
-        for i in range(len(self.py)):
-            if self.py[i] in self.brackets_list:
-                data = [i, i, "brackets"]
-                self.add_coloring(data)
+        self.add_coloring_at_single_char(self.brackets_list, "brackets")
     def find_number(self): # 尋找數字(class='number')
         sign = " \n:+-*/%=,()[]{}"
         detected = False
@@ -308,6 +264,18 @@ class PythonToHTML:
         else:
             self.coloring_list.append(data)
             self.colored.extend([i for i in range(start, end + 1)])
+    def add_coloring_and_detect_sign(self, target_list, sign, class_name): # 新增著色區塊同時偵測左右字元
+        for t in target_list:
+            for start in self.search_all(t):
+                end = start + len(t) - 1
+                if self.py[start - 1] in sign and self.py[end + 1] in sign:
+                    data = [start, end, class_name]
+                    self.add_coloring(data)
+    def add_coloring_at_single_char(self, target_list, class_name): # 新增單字元著色區塊
+        for i in range(len(self.py)):
+            if self.py[i] in target_list:
+                data = [i, i, class_name]
+                self.add_coloring(data)
     def is_name(self, s, first): # 確認是否為合法命名
         if first:
             return s.isalpha() or s == "_"
@@ -315,6 +283,5 @@ class PythonToHTML:
             return s.isdigit() or s.isalpha() or s == "_"
     def is_number(self, s): # 確認是否為數字(int float 皆可判斷)
         return s.isdigit() or s == "."
-
 pth = PythonToHTML(input_py_name = "in", output_html_name = "test")
 pth.main()
