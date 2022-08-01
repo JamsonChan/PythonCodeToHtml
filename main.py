@@ -26,11 +26,12 @@ class PythonToHTML:
         # class='keyword2'
         self.keyword_list2 = ["continue", "finally", "assert", "except", "import", "return", "except", "break", "raise", "while", "yield", "while", "elif", "else", "from", "pass", "with", "del", "for", "try", "as", "if", "in"]
         # class='op'
-        self.op_list = "=+-*/%&|^><!~,:"
+        self.op_list = "=+-*/%&|^>!~,:"
         # class='brackets'
         self.brackets_list = "()[]{}"
     def main(self): # 主程式
         self.read_py() # 讀取 py 檔，並存成 self.py(str)
+        self.py = self.py.replace("<", "&lt")
         self.find_comment() # 尋找註解(class='comment')
         self.find_str() # 尋找字串(class='str')
         self.find_type() # 尋找型別(class='module')
@@ -40,6 +41,7 @@ class PythonToHTML:
         self.find_def() # 尋找自訂函式(class='func')
         self.find_keyword() # 尋找關鍵字(class='keyword1' and 'keyword2')
         self.find_bool_and_None() # 尋找布林值和空值(class='keyword1')
+        self.find_lt() # 尋找 < 的 HTML格式(class='op')
         self.find_op() # 尋找運算符號(class='op')
         self.find_brackets() # 尋找括號(class='brackets')
         self.find_number() # 尋找數字(class='number')
@@ -62,17 +64,11 @@ class PythonToHTML:
     def find_str(self): # 尋找字串(class='str')
         dqi_list = list() # double quotation index list (記錄雙引號位置)
         sqi_list = list() # single quotation index list (記錄單引號位置)
-        all_qi_list = list()
         # 紀錄引號位置
-        # for j in range(len(self.py)):
-        #     if self.py[j] in "\"\'" and self.py[j-1] != "\\" and j not in self.colored: # 跳過「\'」、「\"」字元
-        #         if self.py[j] == "\"": dqi_list.append(j) # 紀錄雙引號位置
-        #         else: sqi_list.append(j) # 紀錄單引號位置
-        for quot in self.quot_list:
-            for j in range(len(self.py)):
-                if self.py[j] == quot and self.py[j-1] != "\\" and j not in self.colored: # 跳過「\'」、「\"」字元
-                    if quot == "\"": dqi_list.append(j) # 紀錄雙引號位置
-                    else: sqi_list.append(j) # 紀錄單引號位置
+        for j in range(len(self.py)):
+            if self.py[j] in "\"\'" and self.py[j-1] != "\\" and j not in self.colored: # 跳過「\'」、「\"」字元
+                if self.py[j] == "\"": dqi_list.append(j) # 紀錄雙引號位置
+                else: sqi_list.append(j) # 紀錄單引號位置
         # 處理 2 雙引包 1 單引(或反之)
         all_list = sorted(sqi_list + dqi_list + self.search_all("\n", self.py))
         split_list = list()
@@ -92,7 +88,7 @@ class PythonToHTML:
                             sqi_list.remove(line[j+1])
 
         # 因引號為兩兩一組出現，故把 list 分割為兩兩一組
-        # (因註解與「\'」、「\"」已處理完，在程式碼無 SyntaxError 前提下，可直接分兩兩一組)
+        # (因註解與2包1和「\'」、「\"」已處理完，在程式碼無 SyntaxError 前提下，可直接分兩兩一組)
         dqi_list = [[dqi_list[j], dqi_list[j+1], "str"] for j in range(0, len(dqi_list), 2)]
         sqi_list = [[sqi_list[j], sqi_list[j+1], "str"] for j in range(0, len(sqi_list), 2)]
         # 若某單引號包裹著雙引號，或者反之，則必須把被包裹的引號對刪除，只保留外部的引號對
@@ -116,11 +112,11 @@ class PythonToHTML:
                 del sqi_list[s]
         
         qi_list = sorted(dqi_list + sqi_list)
-        
         # 處理 f-string 內的{}
         for i in range(len(qi_list)-1, -1, -1):
             start = qi_list[i][0]
             end = qi_list[i][1]
+
             # 跳過 f-string 內的雙大括號
             py_copy = self.py[:].replace("{{", "🧡🧡").replace("}}", "🌟🌟")
             if py_copy[start-1] == "f" and "{" in py_copy[start:end+1] and "}" in py_copy[start:end+1]:
@@ -128,23 +124,24 @@ class PythonToHTML:
                 for j in range(len(py_copy[start:end+1])):
                     if py_copy[start + j] in "\"\'{}":
                         sign_list.append([start + j, py_copy[start + j]])
+
                 for j in range(len(sign_list)-1):
                     cur_ind  = sign_list[j][0]
                     cur      = sign_list[j][1]
                     next_ind = sign_list[j+1][0]
                     next     = sign_list[j+1][1]
                     if cur in "\"\'" and next == "{":
-                        if j != 0:
-                            cur_ind += 1
+                        if cur_ind + 1 == next_ind: continue
+                        if j != 0: cur_ind += 1
                         next_ind -= 1
                     elif cur == "}" and next in "\"\'":
                         cur_ind += 1
-                    elif (cur == "}" and next == "{"):
+                    elif cur == "}" and next == "{":
+                        if cur_ind + 1 == next_ind: continue
                         cur_ind += 1
                         next_ind -= 1
-                    elif (cur in "\"\'" and next in "\"\'"):
-                        if j!=0:
-                            cur_ind += 1
+                    elif cur in "\"\'" and next in "\"\'":
+                        if j!=0: cur_ind += 1
                     else:
                         continue
                     qi_list.append([cur_ind, next_ind, "str"])
@@ -155,7 +152,7 @@ class PythonToHTML:
         for qi in qi_list:
             self.add_coloring(qi)
             # 處理 f-string 的 f
-            f_ind = qi[0]-1
+            f_ind = qi[0] - 1
             if self.py[f_ind] == "f":
                 self.add_coloring([f_ind, f_ind, "keyword1"])
     def find_type(self): # 尋找型別(class='module')
@@ -231,25 +228,27 @@ class PythonToHTML:
     def find_bool_and_None(self): # 尋找布林值和空值(class='keyword1')
         sign = " \n:()[]{}="
         self.add_coloring_and_detect_sign(self.bool_list, sign, "keyword1")
+    def find_lt(self): # 尋找 < 的 HTML格式(class='op')
+        for lt in self.search_all("&lt", self.py):
+            self.add_coloring([lt, lt+2, "op"])
     def find_op(self): # 尋找運算符號(class='op')
         self.add_coloring_at_single_char(self.op_list, "op")
     def find_brackets(self): # 尋找括號(class='brackets')
         self.add_coloring_at_single_char(self.brackets_list, "brackets")
     def find_number(self): # 尋找數字(class='number')
-        sign = " \n:+-*/%=,()[]{}"
+        sign = [' ', '\n', ':', '+', '-', '*', '/', '%', '=', ',', '(', ')', '[', ']', '{', '}', '>']
         detected = False
         for i in range(len(self.py)):
-            if self.is_number(self.py[i]) and self.py[i-1] in sign:
+            if self.is_number(self.py[i]) and (self.py[i-1] in sign or self.py[i-3:i] == "&lt"):
                 start = i
                 detected = True
             if detected:
-                if self.is_number(self.py[i]) and self.py[i + 1] in sign:
+                if self.is_number(self.py[i]) and (self.py[i + 1] in sign or self.py[i+1:i+4] ==  "&lt"):
                     end = i
                     data = [start, end, "number"]
                     self.add_coloring(data)
                     detected = False
     def add_span(self): # 加入所有 span 標籤
-
         self.coloring_list.sort(reverse=True)
         for loc in self.coloring_list:
             start = loc[0]
@@ -271,18 +270,16 @@ class PythonToHTML:
 
         
         for i in range(len(py_list)-1, -1, -1):
-            # 刪除切分多餘的空元素
-            if py_list[i] == "":
-                del py_list[i]
+            # # 刪除切分多餘的空元素
+            # if py_list[i] == "":
+            #     del py_list[i]
             # 將不在 span 標籤內的空字元轉為 HTML 格式(否則連續空格會被縮成一個空格)
             if not py_list[i].startswith("<span"):
                 py_list[i] = py_list[i].replace(" ", "&nbsp")
             # 將在字串 span 標籤內的 < 轉為 HTML 格式(否則會被誤認為標籤符號)
             if py_list[i].startswith("<span class='str'>"):
-                py_list[i] = py_list[i][:19] + py_list[i][19:-8].replace("<", "&lt") + py_list[i][-8:]
-
-
-
+                if "<" in py_list[i][19:-8]: # WHY?
+                    py_list[i] = py_list[i][:19] + py_list[i][19:-8].replace("<", "&lt") + py_list[i][-8:]
 
         self.py = "".join(py_list)
     def to_html(self): # 轉為 HTML
