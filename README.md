@@ -1,6 +1,7 @@
-# ver 2.0.4
+# ver 2.0.5
 Fixed bugs:
-1. f-string display exception
+1. HTML display < exception
+2. Quotation ( " and ' ) doubly generate
 
 Issues found but not fixed:
 1. Spanning string display error
